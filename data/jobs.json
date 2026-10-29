@@ -1,0 +1,61 @@
+{
+    "jobs": [
+        {
+            "title": "Web Development Intern",
+            "department": "Technology",
+            "job_type": "Internship",
+            "work_mode": "Hybrid",
+            "location": "India",
+            "openings": "2",
+            "experience": "0",
+            "short_description": "Learn by contributing to website design, development, and digital experiences.",
+            "description": "elected intern's day-to-day responsibilities include:\r\n\r\n1. Develop functional and fast-responsive websites.\r\n2. Coding using various web languages\r\n3. Documenting the code for future use\r\n4. Maintain websites and elaborate mobile-based and web-based features\r\n5. Troubleshoot UI and improve its performance accordingly\r\n6. Integrate UI elements with server-side ones\r\n7. Detect and fulfill front-end and back-end requirements\r\n8. Collaborate with developers, designers, system admins, and customers and tailor web solutions to their needs and requirements\r\n9. Write comprehensive manuals, guides and documents\r\n10. Compile prototype and quality mockups\r\n11. Make sure that high-quality graphic standards are met",
+            "responsibilities": "",
+            "skills": "SKILLS REQUIRED:\r\nHTML5, JavaScript, jQuery, AngularJS, CSS, HTML, Bootstrap, WordPress, CSS3",
+            "deadline": "",
+            "status": "Published",
+            "id": "demo-web-development-intern",
+            "created_at": "2026-03-01T00:00:00Z",
+            "updated_at": "2026-10-28T18:10:08+00:00",
+            "applications": []
+        },
+        {
+            "id": "demo-digital-marketing-intern",
+            "title": "Digital Marketing Intern",
+            "department": "Digital Marketing",
+            "job_type": "Internship",
+            "work_mode": "Hybrid",
+            "location": "India",
+            "openings": "",
+            "experience": "",
+            "short_description": "Explore digital campaigns, audience engagement, and marketing content.",
+            "description": "Explore digital campaigns, audience engagement, and marketing content.",
+            "responsibilities": "",
+            "skills": "",
+            "deadline": "",
+            "status": "Published",
+            "created_at": "2026-03-01T00:00:00Z",
+            "updated_at": "2026-03-01T00:00:00Z",
+            "applications": []
+        },
+        {
+            "title": "Software Developer intern",
+            "department": "iT",
+            "job_type": "Internship",
+            "work_mode": "Remote",
+            "location": "wfh",
+            "openings": "1",
+            "experience": "0",
+            "short_description": "internship",
+            "description": "learn collaborate with real time problem solving assessments",
+            "responsibilities": "",
+            "skills": "",
+            "deadline": "2026-10-30",
+            "status": "Published",
+            "id": "67747ca19c43f40504e8b15763962178",
+            "created_at": "2026-10-28T11:07:46+00:00",
+            "updated_at": "2026-10-29T06:00:10+00:00",
+            "applications": []
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+Options -Indexes
+<FilesMatch "^(?:\.|setup\.php|.*\.lock)$">
+    Require all denied
+</FilesMatch>
