@@ -36,10 +36,14 @@ Replace the temporary demo credentials before production by rerunning the setup 
 
 ## Run locally
 
-From a VS Code terminal opened in this `career admin` folder, run PHP's built-in server on port `8080` (port `5500` is left available for a separate static-site server):
+From a VS Code terminal opened in this `career admin` folder, run PHP's built-in server on port `8080` (port `5500` is left available for a separate static-site server). The application endpoint requires PHP's `fileinfo` extension to validate uploaded resume MIME types:
 
 ```powershell
-php -S localhost:8080 -t .. .\router.php
+$phpDir = Split-Path (Get-Command php).Source
+$env:CAREER_EMAIL_MODE = "log"
+php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
+  -d upload_max_filesize=5M -d post_max_size=6M `
+  -S localhost:8080 -t .. .\router.php
 ```
 
 Keep this terminal open. Open the admin at:
@@ -179,11 +183,14 @@ For local development only, `CAREER_EMAIL_MODE=log` records a no-delivery attemp
 
 ## Local application testing
 
-Use PHP 8.0+ with sessions enabled. Enable `fileinfo` where available so the server can also check the detected MIME type; when it is unavailable, the endpoint still checks the PDF header and end-of-file marker. Keep the existing PHP built-in server/router arrangement; from this project directory run:
+Use PHP 8.0+ with sessions and the `fileinfo` extension enabled. The application endpoint fails closed when MIME inspection is unavailable. Keep the existing PHP built-in server/router arrangement; from this project directory run:
 
 ```powershell
 $env:CAREER_EMAIL_MODE = "log"
-php -S localhost:8080 -t .. .\router.php
+$phpDir = Split-Path (Get-Command php).Source
+php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
+  -d upload_max_filesize=5M -d post_max_size=6M `
+  -S localhost:8080 -t .. .\router.php
 ```
 
 Open the existing admin at `http://localhost:8080/career%20admin/`. If using a separate local static site server, its origin should be `http://localhost:5500` or `http://127.0.0.1:5500`; those two development origins are the only cross-origin origins allowed. The PHP server's router blocks HTTP access to `data/`, `private/`, and `setup.php`, because PHP's built-in server does not read Apache `.htaccess` files.

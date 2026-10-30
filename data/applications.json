@@ -1,3 +1,48 @@
 {
-    "applications": []
+    "applications": [
+        {
+            "id": "APP-20261029-D8C6A72B559B39ECCA1CD9AED83563B1",
+            "job_id": "67747ca19c43f40504e8b15763962178",
+            "job_title": "Software Developer intern",
+            "full_name": "Ayush kumar",
+            "email": "gamingboss9851@gmail.com",
+            "phone": "+919335280820",
+            "location": "Navi Mumbai",
+            "qualification": "af",
+            "college": "Buddha institute of technology",
+            "graduation_year": "2027",
+            "linkedin_url": "",
+            "portfolio_url": "",
+            "cover_letter": "36",
+            "resume_reference": "resume-5e219de65824a39de31959a24d8617ad.pdf",
+            "consent": true,
+            "consent_at": "2026-10-29T17:26:21+00:00",
+            "submitted_at": "2026-10-29T17:26:21+00:00",
+            "status": "New",
+            "notification_status": "Pending",
+            "notification_attempted_at": "2026-10-29T17:26:21+00:00"
+        },
+        {
+            "id": "APP-20261030-D0C3235334F0A978D9A90EA8E6BED784",
+            "job_id": "demo-web-development-intern",
+            "job_title": "Web Development Intern",
+            "full_name": "Ayush kumar",
+            "email": "gamingboss9851@gmail.com",
+            "phone": "+919335280820",
+            "location": "Navi Mumbai",
+            "qualification": "af",
+            "college": "aeh",
+            "graduation_year": "2027",
+            "linkedin_url": "",
+            "portfolio_url": "",
+            "cover_letter": "hgrfedsb",
+            "resume_reference": "resume-f25b486f50624813fc89c803e192216a.pdf",
+            "consent": true,
+            "consent_at": "2026-10-30T04:59:03+00:00",
+            "submitted_at": "2026-10-30T04:59:03+00:00",
+            "status": "New",
+            "notification_status": "Pending",
+            "notification_attempted_at": "2026-10-30T04:59:03+00:00"
+        }
+    ]
 }
