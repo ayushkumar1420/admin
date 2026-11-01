@@ -226,147 +226,74 @@ function localEmailLogMode(): bool
         && (bool) preg_match('/^(localhost|127\.0\.0\.1)(?::\d+)?$/', $host);
 }
 
-function smtpReadResponse($connection): array
+function sendCareerEmail(string $recipient, string $subject, string $body, array $localLogContext = []): bool
 {
-    $response = '';
-    do {
-        $line = fgets($connection, 515);
-        if ($line === false) {
-            throw new RuntimeException('The SMTP server closed the connection unexpectedly.');
-        }
-        $response .= $line;
-    } while (strlen($line) >= 4 && $line[3] === '-');
-    if (!preg_match('/^(\d{3})/', $response, $matches)) {
-        throw new RuntimeException('The SMTP server returned an invalid response.');
+    if (!filter_var($recipient, FILTER_VALIDATE_EMAIL) || strpbrk($subject . $recipient, "\r\n") !== false) {
+        throw new RuntimeException('The email recipient or subject is invalid.');
     }
-    return [(int) $matches[1], trim($response)];
-}
+    if (localEmailLogMode()) {
+        $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private' . DIRECTORY_SEPARATOR . 'email-attempts.jsonl';
+        $entry = json_encode(array_merge([
+            'attempted_at' => gmdate('c'),
+            'delivered' => false,
+            'mode' => 'development-log-only',
+        ], $localLogContext), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+        if (file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) === false) {
+            throw new RuntimeException('The local email attempt could not be recorded.');
+        }
+        @chmod($path, 0600);
+        return false;
+    }
 
-function smtpCommand($connection, string $command, array $expected): string
-{
-    $message = $command . "\r\n";
-    $offset = 0;
-    while ($offset < strlen($message)) {
-        $written = fwrite($connection, substr($message, $offset));
-        if ($written === false || $written === 0) {
-            throw new RuntimeException('The SMTP command could not be sent.');
+    if (!function_exists('mail')) {
+        throw new RuntimeException('PHP mail delivery is not available on this server.');
+    }
+
+    $fromEmail = getenv('CAREER_MAIL_FROM_ADDRESS');
+    $fromName = (string) (getenv('CAREER_MAIL_FROM_NAME') ?: 'DeepshiTech Careers');
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+    ];
+    $additionalParameters = '';
+    if ($fromEmail !== false && trim($fromEmail) !== '') {
+        $fromEmail = trim($fromEmail);
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || strpbrk($fromEmail . $fromName, "\r\n") !== false) {
+            throw new RuntimeException('PHP mail sender details are not configured correctly.');
         }
-        $offset += $written;
+        $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
+        $headers[] = 'From: ' . $encodedFromName . ' <' . $fromEmail . '>';
+        $additionalParameters = '-f' . $fromEmail;
     }
-    [$code, $response] = smtpReadResponse($connection);
-    if (!in_array($code, $expected, true)) {
-        throw new RuntimeException('The SMTP server rejected a mail operation (' . $code . ').');
+
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $accepted = $additionalParameters === ''
+        ? mail($recipient, $encodedSubject, $body, implode("\r\n", $headers))
+        : mail($recipient, $encodedSubject, $body, implode("\r\n", $headers), $additionalParameters);
+    if (!$accepted) {
+        throw new RuntimeException('The server did not accept the email for delivery.');
     }
-    return $response;
+    return true;
 }
 
 function sendApplicationNotification(array $application): void
 {
-    if (localEmailLogMode()) {
-        $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private' . DIRECTORY_SEPARATOR . 'email-attempts.jsonl';
-        $entry = json_encode([
-            'application_id' => $application['id'],
-            'attempted_at' => gmdate('c'),
-            'delivered' => false,
-            'mode' => 'development-log-only',
-        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
-        if (file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) === false) {
-            throw new RuntimeException('The local notification attempt could not be recorded.');
-        }
-        @chmod($path, 0600);
-        return;
-    }
-
-    $host = trim((string) getenv('CAREER_SMTP_HOST'));
-    $username = (string) getenv('CAREER_SMTP_USERNAME');
-    $password = (string) getenv('CAREER_SMTP_PASSWORD');
-    $encryption = strtolower(trim((string) (getenv('CAREER_SMTP_ENCRYPTION') ?: 'tls')));
-    $portValue = getenv('CAREER_SMTP_PORT');
-    $port = $portValue === false || trim($portValue) === '' ? 587 : (int) $portValue;
-    if ($host === '' || $username === '' || $password === '' || !in_array($encryption, ['tls', 'ssl'], true)
-        || $port < 1 || $port > 65535 || !filter_var($username, FILTER_VALIDATE_EMAIL)) {
-        throw new RuntimeException('SMTP is not configured.');
-    }
-    if (strpbrk($host . $username, "\r\n") !== false || filter_var($host, FILTER_VALIDATE_IP) === false
-        && !preg_match('/^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/', $host)) {
-        throw new RuntimeException('SMTP is not configured correctly.');
-    }
-    if ($encryption === 'ssl' && !extension_loaded('openssl')) {
-        throw new RuntimeException('The PHP OpenSSL extension is required for SMTP encryption.');
-    }
-    $hrEmail = applicationHrEmail();
-    $fromName = (string) (getenv('CAREER_SMTP_FROM_NAME') ?: 'DeepshiTech Careers');
-    $fromEmail = (string) (getenv('CAREER_SMTP_FROM_EMAIL') ?: $username);
-    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || strpbrk($fromName . $fromEmail, "\r\n") !== false) {
-        throw new RuntimeException('SMTP sender details are not configured correctly.');
-    }
-
-    $context = stream_context_create(['ssl' => [
-        'verify_peer' => true,
-        'verify_peer_name' => true,
-        'peer_name' => $host,
-    ]]);
-    $address = ($encryption === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
-    $connection = @stream_socket_client($address, $errorNumber, $errorMessage, 15, STREAM_CLIENT_CONNECT, $context);
-    if ($connection === false) {
-        throw new RuntimeException('The SMTP server could not be reached.');
-    }
-    stream_set_timeout($connection, 15);
-    $dataAccepted = false;
-    try {
-        [$greetingCode] = smtpReadResponse($connection);
-        if ($greetingCode !== 220) {
-            throw new RuntimeException('The SMTP server did not accept the connection.');
-        }
-        $helo = preg_replace('/[^A-Za-z0-9.-]/', '', (string) (gethostname() ?: 'localhost')) ?: 'localhost';
-        smtpCommand($connection, 'EHLO ' . $helo, [250]);
-        if ($encryption === 'tls') {
-            smtpCommand($connection, 'STARTTLS', [220]);
-            if (!function_exists('stream_socket_enable_crypto')
-                || stream_socket_enable_crypto($connection, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
-                throw new RuntimeException('The SMTP TLS connection could not be established.');
-            }
-            smtpCommand($connection, 'EHLO ' . $helo, [250]);
-        }
-        smtpCommand($connection, 'AUTH LOGIN', [334]);
-        smtpCommand($connection, base64_encode($username), [334]);
-        smtpCommand($connection, base64_encode($password), [235]);
-        smtpCommand($connection, 'MAIL FROM:<' . $fromEmail . '>', [250]);
-        smtpCommand($connection, 'RCPT TO:<' . $hrEmail . '>', [250, 251]);
-        smtpCommand($connection, 'DATA', [354]);
-        $subject = 'New job application: ' . (string) $application['job_title'];
-        $body = implode("\r\n", [
-            'A new application has been submitted.',
-            '',
-            'Application ID: ' . $application['id'],
-            'Job: ' . $application['job_title'],
-            'Applicant: ' . $application['full_name'],
-            'Email: ' . $application['email'],
-            'Phone: ' . $application['phone'],
-            'Submitted: ' . $application['submitted_at'],
-            '',
-            'Sign in to the Career Admin dashboard to review the application.',
-        ]);
-        $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-        $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
-        $message = 'Date: ' . date(DATE_RFC2822) . "\r\n"
-            . 'From: ' . $encodedFromName . ' <' . $fromEmail . ">\r\n"
-            . 'To: <' . $hrEmail . ">\r\n"
-            . 'Subject: ' . $encodedSubject . "\r\n"
-            . 'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $helo . ">\r\n"
-            . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n"
-            . "Content-Transfer-Encoding: 8bit\r\n\r\n"
-            . str_replace(["\r\n.", "\n."], ["\r\n..", "\n.."], $body) . "\r\n.";
-        smtpCommand($connection, $message, [250]);
-        $dataAccepted = true;
-        smtpCommand($connection, 'QUIT', [221]);
-    } catch (Throwable $error) {
-        if (!$dataAccepted) {
-            throw $error;
-        }
-    } finally {
-        fclose($connection);
-    }
+    $body = implode("\r\n", [
+        'A new application has been submitted.',
+        '',
+        'Application ID: ' . $application['id'],
+        'Job: ' . $application['job_title'],
+        'Applicant: ' . $application['full_name'],
+        'Email: ' . $application['email'],
+        'Phone: ' . $application['phone'],
+        'Submitted: ' . $application['submitted_at'],
+        '',
+        'Sign in to the Career Admin dashboard to review the application.',
+    ]);
+    sendCareerEmail(applicationHrEmail(), 'New job application: ' . (string) $application['job_title'], $body, [
+        'application_id' => $application['id'],
+    ]);
 }
 
 function recordApplicationNotification(string $applicationId, string $status, string $error = ''): void
@@ -407,7 +334,7 @@ function retryApplicationNotification(string $applicationId): string
         error_log('Career application notification failed for ' . $applicationId . ': ' . $error->getMessage());
         recordApplicationNotification($applicationId, 'Failed', localEmailLogMode()
             ? 'Development notification logging failed; no email was sent.'
-            : 'Email could not be sent. Check server-side SMTP configuration and logs.');
+            : 'Email could not be sent. Check PHP mail support and server logs.');
         return 'Failed';
     }
 }

@@ -52,7 +52,7 @@ Keep this terminal open. Open the admin at:
 
 For the Explore page, start VS Code Live Server from the website folder and open `http://127.0.0.1:5500/career/explore.html`. The Explore page connects to the PHP feed at `http://localhost:8080/career%20admin/public-jobs.php`; the API allows the local `localhost:5500` and `127.0.0.1:5500` origins. The router denies direct requests for private configuration and JSON storage because PHP's built-in server does not read Apache `.htaccess` files. If either server reports that the port is already in use, stop the other server or choose different ports and update the local API URL in the frontend.
 
-The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `/career-admin/public-jobs.php` for production. On `localhost` or `127.0.0.1`, it uses `http://localhost:8080/career%20admin/public-jobs.php` so Explore can reach the PHP server while Live Server serves the static page from port `5500`. The endpoint explicitly permits only these two local development origins. For production, map this folder to `/career-admin/` on the same origin as the website.
+The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `/career-admin/public-jobs.php` for production. On `localhost` or `127.0.0.1`, it uses `http://localhost:8080/career%20admin/public-jobs.php` so Explore can reach the PHP server while a static server serves the website on any local port. Local API CORS permits localhost and 127.0.0.1 origins on any port. Remember that `localhost` means the computer running the browser: a page opened on another laptop cannot reach your laptop's `localhost:8080`. For testing across computers, deploy both projects to the same testing domain or configure a reachable API host explicitly. For production, map this folder to `/career-admin/` on the same origin as the website.
 
 ## Job JSON format
 
@@ -164,22 +164,17 @@ The response never includes applicant records, private file paths, or mail crede
 
 ## HR email configuration
 
-The recipient is configured server-side through `CAREER_HR_EMAIL` and defaults to `ayushmaurya496@gmail.com`. Email is sent by the built-in SMTP client; `mail()` is not used. Configure these environment variables in the Hostinger PHP application/environment settings (never in website JavaScript or public JSON):
+The recipient is configured server-side through `CAREER_HR_EMAIL` and defaults to `ayushmaurya496@gmail.com`. Notifications use PHP's built-in `mail()` function, without SMTP credentials or a mail library. This only works if the web host has enabled and configured PHP mail delivery; confirm any sending limits or fees with the host. A `true` return means the server accepted the message for delivery, not that it reached the inbox.
 
 ```text
 CAREER_HR_EMAIL=ayushmaurya496@gmail.com
-CAREER_SMTP_HOST=smtp.your-provider.example
-CAREER_SMTP_PORT=587
-CAREER_SMTP_ENCRYPTION=tls
-CAREER_SMTP_USERNAME=your-mailbox@your-domain.example
-CAREER_SMTP_PASSWORD=your-mailbox-password
-CAREER_SMTP_FROM_EMAIL=your-mailbox@your-domain.example
-CAREER_SMTP_FROM_NAME=DeepshiTech Careers
+CAREER_MAIL_FROM_ADDRESS=careers@your-domain.example
+CAREER_MAIL_FROM_NAME=DeepshiTech Careers
 ```
 
-Port `587` uses STARTTLS; port `465` can use `CAREER_SMTP_ENCRYPTION=ssl`. Use a mailbox and SMTP host supplied by your mail provider, and make sure the PHP OpenSSL extension is enabled for encrypted SMTP. SMTP delivery is marked `Sent` only after the configured SMTP server accepts the message; this does not guarantee inbox delivery. A failed send leaves the application saved, marks its notification `Failed`, logs only a safe server-side error, and can be retried from the admin detail view.
+Set the From address to an address on your own domain if the host requires it; omit it if the host supplies a default sender. A failed send leaves the application saved, marks its notification `Failed`, logs only a safe server-side error, and can be retried from the admin detail view.
 
-For local development only, `CAREER_EMAIL_MODE=log` records a no-delivery attempt in the protected `private/email-attempts.jsonl` and leaves the notification `Pending`. This mode is accepted only when PHP runs via its built-in development server on `localhost` or `127.0.0.1`; production PHP/Hostinger will ignore it and require working SMTP settings. It never reports a logged attempt as an email sent.
+For local development only, `CAREER_EMAIL_MODE=log` records a no-delivery attempt in the protected `private/email-attempts.jsonl` and leaves the notification `Pending`. This mode is accepted only when PHP runs via its built-in development server on `localhost` or `127.0.0.1`; it never reports a logged attempt as an email sent.
 
 ## Local application testing
 
@@ -197,16 +192,16 @@ Open the existing admin at `http://localhost:8080/career%20admin/`. If using a s
 
 Test cases:
 
-1. Use a published ID such as `demo-web-development-intern` from `data/jobs.json` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
+1. Submit an application with a published job ID such as `demo-web-development-intern` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
 2. Submit a made-up ID or an ID for a job changed to `Draft`; expect HTTP `422` and no application record.
 3. Omit name, email, phone, consent, or resume; use an invalid email/phone/year/URL; expect HTTP `422`.
 4. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
 5. After a successful submission, inspect `data/applications.json` locally and confirm the record references only a generated resume name; do not request the JSON through HTTP. Confirm the file is in `private/application-resumes/` (or your configured private directory).
 6. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
-7. Stop the built-in server with `Ctrl+C`, run `Remove-Item Env:CAREER_EMAIL_MODE` in that terminal, and restart the server to exercise failure handling with SMTP unset. The submission should still be persisted, and notification status should be `Failed`; retrying from admin should remain visibly failed until SMTP is configured.
+7. Stop the built-in server with `Ctrl+C`, run `Remove-Item Env:CAREER_EMAIL_MODE` in that terminal, and restart the server to exercise the host's PHP mail configuration. The application should still be persisted; notification status reflects whether PHP accepted the message for delivery.
 
 On Windows PowerShell, use `curl.exe` (not the `curl` alias) for multipart examples above. For an oversized-file test, upload a local file larger than 5 MB; do not alter production PHP upload limits to bypass the application limit.
 
 ## Hostinger deployment notes
 
-Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can call the production endpoint above. Confirm the hosting account uses PHP 8+, Apache `.htaccess` rules are enabled, and `data/.htaccess` and `private/.htaccess` return access denied for direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Configure SMTP environment values in the server-side PHP environment, require HTTPS, and verify one real notification before launch. The PHP built-in local-development email mode must not be deployed as a production mail service.
+Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can reach the production endpoint. Confirm the hosting account uses PHP 8+, supports PHP `mail()`, and allows outbound application notifications; check its quotas/pricing with the host. Apache `.htaccess` rules must be enabled, and `data/.htaccess` and `private/.htaccess` must deny direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Set the optional mail From address in the server-side PHP environment, require HTTPS, and verify one real notification before launch. The PHP built-in local-development email mode must not be deployed as a production mail service.

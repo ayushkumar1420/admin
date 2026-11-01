@@ -6,13 +6,13 @@ header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
 $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedLocalOrigins = ['http://localhost:5500', 'http://127.0.0.1:5500'];
-if (in_array($requestOrigin, $allowedLocalOrigins, true)) {
+$isLocalOrigin = static fn(string $value): bool => (bool) preg_match('~^https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$~i', $value);
+if ($requestOrigin !== '' && $isLocalOrigin($requestOrigin)) {
     header('Access-Control-Allow-Origin: ' . $requestOrigin);
     header('Vary: Origin');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    if (!in_array($requestOrigin, $allowedLocalOrigins, true)) {
+    if (!$isLocalOrigin($requestOrigin)) {
         http_response_code(403);
         exit;
     }
