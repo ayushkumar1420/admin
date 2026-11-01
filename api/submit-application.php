@@ -50,6 +50,10 @@ function applicationApiError(string $message, int $status): void
     exit;
 }
 
+class DuplicateJobApplicationException extends RuntimeException
+{
+}
+
 try {
     $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
     if ($contentLength > 6 * 1024 * 1024) {
@@ -59,6 +63,7 @@ try {
     $job = publishedJob($jobId);
     $name = applicationInput('full_name', 'Full name', 120, true);
     $email = applicationInput('email', 'Email address', 254, true);
+    $verificationToken = applicationInput('verification_token', 'Email verification', 64, true);
     $phone = applicationInput('phone', 'Phone number', 30, true);
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         throw new InvalidArgumentException('Enter a valid email address.');
@@ -93,6 +98,8 @@ try {
         'status' => 'New',
         'notification_status' => 'Pending',
         'notification_attempted_at' => null,
+        'candidate_confirmation_status' => 'Pending',
+        'candidate_confirmation_attempted_at' => null,
     ];
     if ($application['graduation_year'] !== ''
         && (!preg_match('/^\d{4}$/', $application['graduation_year'])
@@ -108,7 +115,16 @@ try {
     }
     @chmod($resumePath, 0600);
     try {
+        if (!consumeEmailOtpVerification($verificationToken, $email)) {
+            throw new InvalidArgumentException('Verify your email address before submitting your application.');
+        }
         withApplications(static function (&$applications) use ($application): void {
+            foreach ($applications as $existingApplication) {
+                if (strcasecmp((string) ($existingApplication['email'] ?? ''), $application['email']) === 0
+                    && ($existingApplication['job_id'] ?? '') === $application['job_id']) {
+                    throw new DuplicateJobApplicationException('An application with this email address already exists for this job.');
+                }
+            }
             $applications[] = $application;
         }, true);
     } catch (Throwable $error) {
@@ -117,13 +133,17 @@ try {
     }
 
     $notificationStatus = retryApplicationNotification($application['id']);
+    $candidateConfirmationStatus = notifyCandidateApplicationReceived($application);
     http_response_code(201);
     echo json_encode([
         'success' => true,
         'application_id' => $application['id'],
         'notification_status' => $notificationStatus,
+        'candidate_confirmation_status' => $candidateConfirmationStatus,
         'message' => 'Your application has been received.',
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+} catch (DuplicateJobApplicationException $error) {
+    applicationApiError($error->getMessage(), 409);
 } catch (InvalidArgumentException $error) {
     applicationApiError($error->getMessage(), 422);
 } catch (Throwable $error) {

@@ -104,13 +104,24 @@ The Careers website should submit `multipart/form-data` to:
 - Local: `http://localhost:8080/career%20admin/api/submit-application.php`
 - Production (when this folder is deployed at `/career-admin/`): `https://YOUR-DOMAIN/career-admin/api/submit-application.php`
 
+The applicant-facing Careers form is maintained outside this PHP project; its UI is unchanged here. That frontend must call the OTP endpoints below, collect the code, and include the returned token when it submits the existing application form.
+
 The API accepts `POST` only. It accepts the following fields:
+
+Before submitting, the Careers form must call these two JSON APIs in order:
+
+1. `POST api/send-email-otp.php` as form data with `email`. On success, the response contains a `challenge_id`; the candidate receives a six-digit code by email.
+2. `POST api/verify-email-otp.php` as form data with `email`, `challenge_id`, and `otp`. On success, the response contains a `verification_token`.
+3. Include that `verification_token` with the multipart application submission below. It is bound to the verified email, expires after 30 minutes, and can be used once.
+
+OTP codes expire after five minutes, allow five incorrect attempts, and can be resent once per email every 60 seconds. Requests are also limited to five per email and ten per client IP per hour. Verification state is stored in protected `private/email-otps.json`; only password hashes of codes and verification tokens are stored. On the local PHP development server with `CAREER_EMAIL_MODE=log`, the send response includes `development_code` for testing only; this field is never included in production responses. Production sends use PHP `mail()` and require the hosting account to support it.
 
 | Field | Required | Validation |
 |---|---:|---|
 | `job_id` | Yes | Must match a currently Published job ID |
 | `full_name` | Yes | Up to 120 characters |
 | `email` | Yes | Valid email address, up to 254 characters |
+| `verification_token` | Yes | Single-use token from successful email OTP verification |
 | `phone` | Yes | Validated phone characters and 7-15 digits |
 | `resume` | Yes | PDF, no larger than 5 MB |
 | `recruitment_consent` | Yes | Send the string `1` only when checked |
@@ -125,10 +136,19 @@ The API accepts `POST` only. It accepts the following fields:
 Example request from a terminal (replace the resume path with a real PDF):
 
 ```powershell
+curl.exe -i -X POST "http://localhost:8080/career%20admin/api/send-email-otp.php" `
+  -F "email=applicant@example.com"
+
+curl.exe -i -X POST "http://localhost:8080/career%20admin/api/verify-email-otp.php" `
+  -F "email=applicant@example.com" `
+  -F "challenge_id=CHALLENGE_ID_FROM_SEND_RESPONSE" `
+  -F "otp=123456"
+
 curl.exe -i -X POST "http://localhost:8080/career%20admin/api/submit-application.php" `
   -F "job_id=demo-web-development-intern" `
   -F "full_name=Test Applicant" `
   -F "email=applicant@example.com" `
+  -F "verification_token=TOKEN_RETURNED_BY_VERIFY_EMAIL_OTP" `
   -F "phone=+1 555 123 4567" `
   -F "location=Remote" `
   -F "qualification=BSc Computer Science" `
@@ -148,31 +168,32 @@ Success returns HTTP `201` and an application ID, for example:
   "success": true,
   "application_id": "APP-20261028-0123456789ABCDEF0123456789ABCDEF",
   "notification_status": "Pending",
+  "candidate_confirmation_status": "Pending",
   "message": "Your application has been received."
 }
 ```
 
-The response never includes applicant records, private file paths, or mail credentials. Invalid fields return HTTP `422`; unavailable/unpublished job IDs are rejected. The only job fields recorded with the application are its stable ID and title. Resumes use generated names and are not stored in JSON.
+The response includes separate HR and candidate notification statuses. The application is stored before notification attempts; a mail failure does not erase the application. Duplicate applications using the same email address for the same job are rejected with HTTP `409`. Invalid fields or a missing/invalid/used verification token return HTTP `422`; unavailable/unpublished job IDs are rejected. The response never includes applicant records, private file paths, or mail credentials. The only job fields recorded with the application are its stable ID and title. Resumes use generated names and are not stored in JSON.
 
 ## Application storage and administrator review
 
 - Applicant records: `data/applications.json`, protected by `data/.htaccess` and the local router. PHP uses a separate lock and atomic JSON replacement for reads and writes.
 - Resumes: by default, `private/application-resumes/`, protected by `private/.htaccess`. To keep files outside the website document root on Hostinger, set `CAREER_PRIVATE_STORAGE_DIR` to an absolute, PHP-writable directory outside `public_html`. The configured directory must not be web-accessible.
-- The authenticated admin has an **Applications** section to view records, review details, download resumes, set status to `New`, `Under Review`, `Shortlisted`, or `Rejected`, and retry failed HR notifications. Resume downloads require the existing admin session and look up the file by application ID; public users cannot download files.
+- The authenticated admin has an **Applications** section to view records, review details, download resumes, set status to `New`, `Under Review`, `Shortlisted`, or `Rejected`, and retry failed HR notifications. Resume downloads require the existing admin session and look up the file by application ID; public users cannot download files. HR email notifications include the candidate details and attach the validated PDF resume; the attachment link/download in admin remains protected by the admin session.
 - The resume endpoint is `admin-resume.php`; direct access requires a logged-in admin session. Do not remove the deny rules from `data/.htaccess` or `private/.htaccess`.
 - Ensure PHP can write `data/`, `private/`, and the configured resume directory. Keep backups encrypted and access-restricted; application records contain personal information.
 
 ## HR email configuration
 
-The recipient is configured server-side through `CAREER_HR_EMAIL` and defaults to `ayushmaurya496@gmail.com`. Notifications use PHP's built-in `mail()` function, without SMTP credentials or a mail library. This only works if the web host has enabled and configured PHP mail delivery; confirm any sending limits or fees with the host. A `true` return means the server accepted the message for delivery, not that it reached the inbox.
+The recipient is configured server-side through `CAREER_HR_EMAIL`; if it is unset, the admin email in `private/config.php` is used. Candidate confirmations are sent to the verified email address. HR notifications use PHP's built-in `mail()` function, without SMTP credentials or a mail library. This only works if the web host has enabled and configured PHP mail delivery; confirm any sending limits or fees with the host. A `true` return means the server accepted the message for delivery, not that it reached the inbox.
 
 ```text
-CAREER_HR_EMAIL=ayushmaurya496@gmail.com
+CAREER_HR_EMAIL=your-hr@example.com
 CAREER_MAIL_FROM_ADDRESS=careers@your-domain.example
 CAREER_MAIL_FROM_NAME=DeepshiTech Careers
 ```
 
-Set the From address to an address on your own domain if the host requires it; omit it if the host supplies a default sender. A failed send leaves the application saved, marks its notification `Failed`, logs only a safe server-side error, and can be retried from the admin detail view.
+Set the From address to an address on your own domain if the host requires it; omit it if the host supplies a default sender. HR email status and candidate confirmation status are recorded separately. A failed send leaves the application saved, marks that email status `Failed`, logs a server-side error, and failed HR notifications can be retried from the admin detail view.
 
 For local development only, `CAREER_EMAIL_MODE=log` records a no-delivery attempt in the protected `private/email-attempts.jsonl` and leaves the notification `Pending`. This mode is accepted only when PHP runs via its built-in development server on `localhost` or `127.0.0.1`; it never reports a logged attempt as an email sent.
 
@@ -192,16 +213,18 @@ Open the existing admin at `http://localhost:8080/career%20admin/`. If using a s
 
 Test cases:
 
-1. Submit an application with a published job ID such as `demo-web-development-intern` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
-2. Submit a made-up ID or an ID for a job changed to `Draft`; expect HTTP `422` and no application record.
-3. Omit name, email, phone, consent, or resume; use an invalid email/phone/year/URL; expect HTTP `422`.
-4. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
-5. After a successful submission, inspect `data/applications.json` locally and confirm the record references only a generated resume name; do not request the JSON through HTTP. Confirm the file is in `private/application-resumes/` (or your configured private directory).
-6. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
-7. Stop the built-in server with `Ctrl+C`, run `Remove-Item Env:CAREER_EMAIL_MODE` in that terminal, and restart the server to exercise the host's PHP mail configuration. The application should still be persisted; notification status reflects whether PHP accepted the message for delivery.
+1. Request an OTP using `api/send-email-otp.php`; expect a `challenge_id`. In local log mode, use the response's `development_code`. Confirm a second send within 60 seconds gets HTTP `429`.
+2. Verify the OTP using `api/verify-email-otp.php`; expect a verification token. Try an incorrect code five times, an expired code, and a token for a different email; none may produce a usable token.
+3. Submit a published job application with the verification token and a real PDF. Expect HTTP `201`, a saved application and private resume, plus separate HR and candidate email statuses. Local log mode must leave both statuses `Pending` and deliver nothing.
+4. Re-submit for the same job and email with a new verified token; expect HTTP `409`. Reuse the consumed token; expect HTTP `422`.
+5. Submit a made-up job ID or an ID for a job changed to `Draft`; expect HTTP `422` and no application record. Omit required fields or use invalid email/phone/year/URL values; expect HTTP `422`.
+6. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
+7. Inspect `data/applications.json` locally and confirm a generated resume name and notification statuses are recorded; do not request the JSON through HTTP. Confirm the file is stored in `private/application-resumes/` (or your configured private directory).
+8. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and verify the resume download is authorized.
+9. Stop the built-in server with `Ctrl+C`, run `Remove-Item Env:CAREER_EMAIL_MODE` in that terminal, and restart the server to exercise PHP `mail()`. Check that the host accepts both the HR message with its PDF attachment and the candidate confirmation. Mail failure must leave the application persisted and the relevant notification marked `Failed`.
 
 On Windows PowerShell, use `curl.exe` (not the `curl` alias) for multipart examples above. For an oversized-file test, upload a local file larger than 5 MB; do not alter production PHP upload limits to bypass the application limit.
 
 ## Hostinger deployment notes
 
-Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can reach the production endpoint. Confirm the hosting account uses PHP 8+, supports PHP `mail()`, and allows outbound application notifications; check its quotas/pricing with the host. Apache `.htaccess` rules must be enabled, and `data/.htaccess` and `private/.htaccess` must deny direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Set the optional mail From address in the server-side PHP environment, require HTTPS, and verify one real notification before launch. The PHP built-in local-development email mode must not be deployed as a production mail service.
+Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can reach the production endpoints. Confirm the hosting account uses PHP 8+, supports PHP `mail()`, allows outbound application email, and accepts messages with attachments; check its quotas and limits with the host. Apache `.htaccess` rules must be enabled, and `data/.htaccess` and `private/.htaccess` must deny direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Set the optional mail From address in the server-side PHP environment, require HTTPS, and test the full OTP/application/notification flow on the deployed host before launch. The PHP built-in local-development email mode must not be deployed as a production mail service.

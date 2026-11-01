@@ -598,6 +598,7 @@ $isLogin = !$authenticated;
                                 <?php endforeach; ?>
                                 <tr><th>Resume</th><td><a class="text-action" href="admin-resume.php?id=<?= rawurlencode((string) $selectedApplication['id']) ?>">Download resume (PDF)</a></td></tr>
                                 <tr><th>HR notification</th><td><?= h($selectedApplication['notification_status'] ?? 'Pending') ?><?php if (!empty($selectedApplication['notification_attempted_at'])): ?> · <?= h($selectedApplication['notification_attempted_at']) ?><?php endif; ?><?php if (!empty($selectedApplication['notification_error'])): ?><br><?= h($selectedApplication['notification_error']) ?><?php endif; ?></td></tr>
+                                <tr><th>Candidate confirmation</th><td><?= h($selectedApplication['candidate_confirmation_status'] ?? 'Pending') ?><?php if (!empty($selectedApplication['candidate_confirmation_attempted_at'])): ?> · <?= h($selectedApplication['candidate_confirmation_attempted_at']) ?><?php endif; ?><?php if (!empty($selectedApplication['candidate_confirmation_error'])): ?><br><?= h($selectedApplication['candidate_confirmation_error']) ?><?php endif; ?></td></tr>
                             </tbody></table></div>
                             <div class="form-actions">
                                 <form method="post">
