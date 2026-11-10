@@ -9,27 +9,26 @@ header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 
 $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
-$localOrigins = ['http://localhost:5500', 'http://127.0.0.1:5500'];
+$isLocalOrigin = static fn(string $value): bool => (bool) preg_match('~^https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$~i', $value);
 if ($origin !== '') {
-    if (in_array($origin, $localOrigins, true)) {
-        header('Access-Control-Allow-Origin: ' . $origin);
-        header('Vary: Origin');
-    } else {
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
+    if (!$isLocalOrigin($origin) && $origin !== $scheme . '://' . $host) {
+        http_response_code(403);
+        echo json_encode(['error' => 'This origin is not allowed.']);
+        exit;
+    }
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    if ($origin !== '' && !$isLocalOrigin($origin)) {
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
         $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
         if ($origin !== $scheme . '://' . $host) {
             http_response_code(403);
-            echo json_encode(['error' => 'This origin is not allowed.']);
             exit;
         }
-        header('Access-Control-Allow-Origin: ' . $origin);
-        header('Vary: Origin');
-    }
-}
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    if ($origin !== '' && !in_array($origin, $localOrigins, true)) {
-        http_response_code(403);
-        exit;
     }
     header('Access-Control-Allow-Methods: POST, OPTIONS');
     header('Access-Control-Allow-Headers: Accept, Content-Type');
@@ -59,6 +58,7 @@ try {
     $job = publishedJob($jobId);
     $name = applicationInput('full_name', 'Full name', 120, true);
     $email = applicationInput('email', 'Email address', 254, true);
+    $verificationToken = applicationInput('verification_token', 'Email verification', 64, true);
     $phone = applicationInput('phone', 'Phone number', 30, true);
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         throw new InvalidArgumentException('Enter a valid email address.');
@@ -108,6 +108,9 @@ try {
     }
     @chmod($resumePath, 0600);
     try {
+        if (!consumeEmailVerification($verificationToken, $email)) {
+            throw new InvalidArgumentException('Verify your email address before submitting your application.');
+        }
         withApplications(static function (&$applications) use ($application): void {
             $applications[] = $application;
         }, true);

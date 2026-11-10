@@ -21,8 +21,8 @@
         },
         {
             "id": "demo-digital-marketing-intern",
-            "title": "Digital Marketing Intern",
-            "department": "Digital Marketing",
+            "title": "Performance Marketing Intern",
+            "department": "Performance Marketing",
             "job_type": "Internship",
             "work_mode": "Hybrid",
             "location": "India",
@@ -74,6 +74,25 @@
             "id": "c17ddcf559cd5d561e7cbbe871ed31cb",
             "created_at": "2026-10-30T05:02:05+00:00",
             "updated_at": "2026-10-30T05:02:09+00:00",
+            "applications": []
+        },
+        {
+            "title": "SEO",
+            "department": "SEO",
+            "job_type": "Internship",
+            "work_mode": "Remote",
+            "location": "mumbai",
+            "openings": "1",
+            "experience": "2-5 years",
+            "short_description": "welcome to the job",
+            "description": "hello you can get your job",
+            "responsibilities": "asdfgh",
+            "skills": "sdfghjk",
+            "deadline": "2026-12-01",
+            "status": "Published",
+            "id": "27546224199d427ca36f511bd9a5ebe9",
+            "created_at": "2026-10-31T06:54:33+00:00",
+            "updated_at": "2026-10-31T06:54:33+00:00",
             "applications": []
         }
     ]

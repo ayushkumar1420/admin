@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const CAREER_APPLICATIONS_FILE = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'applications.json';
 const CAREER_JOBS_FILE = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'jobs.json';
+const CAREER_EMAIL_VERIFICATIONS_FILE = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'private' . DIRECTORY_SEPARATOR . 'email-verifications.json';
 const CAREER_APPLICATION_MAX_RESUME_SIZE = 5242880;
 
 function applicationStorageDirectory(): string
@@ -82,6 +83,145 @@ function withApplications(callable $callback, bool $write = false)
         flock($lock, LOCK_UN);
         fclose($lock);
     }
+}
+
+function withEmailVerifications(callable $callback)
+{
+    $directory = dirname(CAREER_EMAIL_VERIFICATIONS_FILE);
+    if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+        throw new RuntimeException('Email verification storage could not be created.');
+    }
+    @chmod($directory, 0700);
+    $lock = fopen(CAREER_EMAIL_VERIFICATIONS_FILE . '.lock', 'c');
+    if ($lock === false || !flock($lock, LOCK_EX)) {
+        if (is_resource($lock)) {
+            fclose($lock);
+        }
+        throw new RuntimeException('Email verification storage is temporarily unavailable.');
+    }
+    try {
+        if (!is_file(CAREER_EMAIL_VERIFICATIONS_FILE)) {
+            applicationWriteJsonAtomically(CAREER_EMAIL_VERIFICATIONS_FILE, ['challenges' => [], 'send_attempts' => []]);
+        }
+        $contents = file_get_contents(CAREER_EMAIL_VERIFICATIONS_FILE);
+        $state = $contents === false ? null : json_decode($contents, true);
+        if (!is_array($state) || !isset($state['challenges'], $state['send_attempts'])
+            || !is_array($state['challenges']) || !is_array($state['send_attempts'])) {
+            throw new RuntimeException('Email verification storage is invalid.');
+        }
+
+        $now = time();
+        $state['challenges'] = array_values(array_filter($state['challenges'], static function ($challenge) use ($now): bool {
+            return is_array($challenge) && (int) ($challenge['expires_at'] ?? 0) > $now;
+        }));
+        $state['send_attempts'] = array_values(array_filter($state['send_attempts'], static function ($attempt) use ($now): bool {
+            return is_array($attempt) && (int) ($attempt['created_at'] ?? 0) > $now - 3600;
+        }));
+
+        $result = $callback($state);
+        applicationWriteJsonAtomically(CAREER_EMAIL_VERIFICATIONS_FILE, $state);
+        return $result;
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+}
+
+function reserveEmailVerificationSend(string $email, string $clientAddress): bool
+{
+    $emailHash = hash('sha256', strtolower(trim($email)));
+    $clientHash = hash('sha256', $clientAddress);
+    $now = time();
+
+    return withEmailVerifications(static function (&$state) use ($emailHash, $clientHash, $now): bool {
+        $emailAttempts = array_values(array_filter($state['send_attempts'], static function ($attempt) use ($emailHash): bool {
+            return ($attempt['email_hash'] ?? '') === $emailHash;
+        }));
+        $clientAttempts = array_values(array_filter($state['send_attempts'], static function ($attempt) use ($clientHash): bool {
+            return ($attempt['client_hash'] ?? '') === $clientHash;
+        }));
+        $recentEmailAttempt = array_filter($emailAttempts, static function ($attempt) use ($now): bool {
+            return (int) ($attempt['created_at'] ?? 0) > $now - 60;
+        });
+        $pendingChallenge = array_filter($state['challenges'], static function ($challenge) use ($emailHash, $now): bool {
+            return ($challenge['email_hash'] ?? '') === $emailHash
+                && (int) ($challenge['expires_at'] ?? 0) > $now
+                && ($challenge['verification_token_hash'] ?? '') === '';
+        });
+        if (count($emailAttempts) >= 5 || count($clientAttempts) >= 10
+            || $recentEmailAttempt !== [] || $pendingChallenge !== []) {
+            return false;
+        }
+
+        $state['send_attempts'][] = [
+            'email_hash' => $emailHash,
+            'client_hash' => $clientHash,
+            'created_at' => $now,
+        ];
+        return true;
+    });
+}
+
+function storeEmailVerificationChallenge(string $challengeId, string $email, string $code): void
+{
+    withEmailVerifications(static function (&$state) use ($challengeId, $email, $code): void {
+        $state['challenges'][] = [
+            'challenge_id' => $challengeId,
+            'email_hash' => hash('sha256', strtolower(trim($email))),
+            'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+            'attempts' => 0,
+            'expires_at' => time() + 600,
+            'verification_token_hash' => '',
+        ];
+    });
+}
+
+function verifyEmailVerificationCode(string $challengeId, string $email, string $code): ?string
+{
+    return withEmailVerifications(static function (&$state) use ($challengeId, $email, $code): ?string {
+        foreach ($state['challenges'] as &$challenge) {
+            if (($challenge['challenge_id'] ?? '') !== $challengeId
+                || !hash_equals((string) ($challenge['email_hash'] ?? ''), hash('sha256', strtolower(trim($email))))
+                || (int) ($challenge['attempts'] ?? 0) >= 5) {
+                continue;
+            }
+            if (($challenge['verification_token_hash'] ?? '') !== '') {
+                unset($challenge);
+                return null;
+            }
+            if (!password_verify($code, (string) ($challenge['code_hash'] ?? ''))) {
+                $challenge['attempts'] = (int) ($challenge['attempts'] ?? 0) + 1;
+                unset($challenge);
+                return null;
+            }
+
+            $token = bin2hex(random_bytes(32));
+            $challenge['verification_token_hash'] = hash('sha256', $token);
+            $challenge['expires_at'] = time() + 1800;
+            unset($challenge);
+            return $token;
+        }
+        unset($challenge);
+        return null;
+    });
+}
+
+function consumeEmailVerification(string $token, string $email): bool
+{
+    $tokenHash = hash('sha256', $token);
+    $emailHash = hash('sha256', strtolower(trim($email)));
+    return withEmailVerifications(static function (&$state) use ($tokenHash, $emailHash): bool {
+        foreach ($state['challenges'] as $index => $challenge) {
+            if (($challenge['email_hash'] ?? '') === $emailHash
+                && (int) ($challenge['expires_at'] ?? 0) > time()
+                && ($challenge['verification_token_hash'] ?? '') !== ''
+                && hash_equals((string) $challenge['verification_token_hash'], $tokenHash)) {
+                unset($state['challenges'][$index]);
+                return true;
+            }
+        }
+        return false;
+    });
 }
 
 function publishedJob(string $jobId): array
@@ -260,21 +400,23 @@ function smtpCommand($connection, string $command, array $expected): string
     return $response;
 }
 
-function sendApplicationNotification(array $application): void
+function sendCareerEmail(string $recipient, string $subject, string $body, array $localLogContext = []): bool
 {
+    if (!filter_var($recipient, FILTER_VALIDATE_EMAIL) || strpbrk($subject . $recipient, "\r\n") !== false) {
+        throw new RuntimeException('The email recipient or subject is invalid.');
+    }
     if (localEmailLogMode()) {
         $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private' . DIRECTORY_SEPARATOR . 'email-attempts.jsonl';
-        $entry = json_encode([
-            'application_id' => $application['id'],
+        $entry = json_encode(array_merge([
             'attempted_at' => gmdate('c'),
             'delivered' => false,
             'mode' => 'development-log-only',
-        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+        ], $localLogContext), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
         if (file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) === false) {
-            throw new RuntimeException('The local notification attempt could not be recorded.');
+            throw new RuntimeException('The local email attempt could not be recorded.');
         }
         @chmod($path, 0600);
-        return;
+        return false;
     }
 
     $host = trim((string) getenv('CAREER_SMTP_HOST'));
@@ -294,7 +436,6 @@ function sendApplicationNotification(array $application): void
     if ($encryption === 'ssl' && !extension_loaded('openssl')) {
         throw new RuntimeException('The PHP OpenSSL extension is required for SMTP encryption.');
     }
-    $hrEmail = applicationHrEmail();
     $fromName = (string) (getenv('CAREER_SMTP_FROM_NAME') ?: 'DeepshiTech Careers');
     $fromEmail = (string) (getenv('CAREER_SMTP_FROM_EMAIL') ?: $username);
     if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || strpbrk($fromName . $fromEmail, "\r\n") !== false) {
@@ -332,26 +473,13 @@ function sendApplicationNotification(array $application): void
         smtpCommand($connection, base64_encode($username), [334]);
         smtpCommand($connection, base64_encode($password), [235]);
         smtpCommand($connection, 'MAIL FROM:<' . $fromEmail . '>', [250]);
-        smtpCommand($connection, 'RCPT TO:<' . $hrEmail . '>', [250, 251]);
+        smtpCommand($connection, 'RCPT TO:<' . $recipient . '>', [250, 251]);
         smtpCommand($connection, 'DATA', [354]);
-        $subject = 'New job application: ' . (string) $application['job_title'];
-        $body = implode("\r\n", [
-            'A new application has been submitted.',
-            '',
-            'Application ID: ' . $application['id'],
-            'Job: ' . $application['job_title'],
-            'Applicant: ' . $application['full_name'],
-            'Email: ' . $application['email'],
-            'Phone: ' . $application['phone'],
-            'Submitted: ' . $application['submitted_at'],
-            '',
-            'Sign in to the Career Admin dashboard to review the application.',
-        ]);
         $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
         $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
         $message = 'Date: ' . date(DATE_RFC2822) . "\r\n"
             . 'From: ' . $encodedFromName . ' <' . $fromEmail . ">\r\n"
-            . 'To: <' . $hrEmail . ">\r\n"
+            . 'To: <' . $recipient . ">\r\n"
             . 'Subject: ' . $encodedSubject . "\r\n"
             . 'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $helo . ">\r\n"
             . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n"
@@ -367,6 +495,26 @@ function sendApplicationNotification(array $application): void
     } finally {
         fclose($connection);
     }
+    return true;
+}
+
+function sendApplicationNotification(array $application): void
+{
+    $body = implode("\r\n", [
+        'A new application has been submitted.',
+        '',
+        'Application ID: ' . $application['id'],
+        'Job: ' . $application['job_title'],
+        'Applicant: ' . $application['full_name'],
+        'Email: ' . $application['email'],
+        'Phone: ' . $application['phone'],
+        'Submitted: ' . $application['submitted_at'],
+        '',
+        'Sign in to the Career Admin dashboard to review the application.',
+    ]);
+    sendCareerEmail(applicationHrEmail(), 'New job application: ' . (string) $application['job_title'], $body, [
+        'application_id' => $application['id'],
+    ]);
 }
 
 function recordApplicationNotification(string $applicationId, string $status, string $error = ''): void

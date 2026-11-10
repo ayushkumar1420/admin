@@ -480,13 +480,13 @@ $isLogin = !$authenticated;
                 <input id="password" name="password" type="password" autocomplete="current-password" required>
                 <button class="button button-gold login-submit" type="submit">Log in</button>
             </form>
-            <a class="back-link" href="../DeepshiTechW1/career/explore.html">← Back to Careers</a>
+            <a class="back-link" href="/career/explore.html">← Back to Careers</a>
         </section>
     </main>
 <?php else: ?>
     <div class="app-shell">
         <aside class="sidebar">
-            <a class="sidebar-brand" href="index.php"><img class="brand-icon" src="assets/deepshitech-logo.png" alt=""><span><strong>DEEPSHITECH</strong><small>CAREER WORKSPACE</small></span></a>
+            <a class="sidebar-brand" href="/index.php"><img class="brand-icon" src="assets/deepshitech-logo.png" alt=""><span><strong>DEEPSHITECH</strong><small>CAREER WORKSPACE</small></span></a>
             <p class="sidebar-label">WORKSPACE</p>
             <nav class="side-nav" aria-label="Career administration">
                 <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="index.php"><span>▦</span>Dashboard</a>

@@ -52,7 +52,7 @@ Keep this terminal open. Open the admin at:
 
 For the Explore page, start VS Code Live Server from the website folder and open `http://127.0.0.1:5500/career/explore.html`. The Explore page connects to the PHP feed at `http://localhost:8080/career%20admin/public-jobs.php`; the API allows the local `localhost:5500` and `127.0.0.1:5500` origins. The router denies direct requests for private configuration and JSON storage because PHP's built-in server does not read Apache `.htaccess` files. If either server reports that the port is already in use, stop the other server or choose different ports and update the local API URL in the frontend.
 
-The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `/career-admin/public-jobs.php` for production. On `localhost` or `127.0.0.1`, it uses `http://localhost:8080/career%20admin/public-jobs.php` so Explore can reach the PHP server while Live Server serves the static page from port `5500`. The endpoint explicitly permits only these two local development origins. For production, map this folder to `/career-admin/` on the same origin as the website.
+The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `/career-admin/public-jobs.php` for production. On `localhost` or `127.0.0.1`, it uses `http://localhost:8080/career%20admin/public-jobs.php` so Explore can reach the PHP server while a static server serves the website on any local port. Local API CORS permits localhost and 127.0.0.1 origins on any port. Remember that `localhost` means the computer running the browser: a page opened on another laptop cannot reach your laptop's `localhost:8080`. For testing across computers, deploy both projects to the same testing domain or configure a reachable API host explicitly. For production, map this folder to `/career-admin/` on the same origin as the website.
 
 ## Job JSON format
 
@@ -106,11 +106,14 @@ The Careers website should submit `multipart/form-data` to:
 
 The API accepts `POST` only. It accepts the following fields:
 
+Before submitting, the applicant must request a six-digit code from `api/send-verification-code.php` and verify it with `api/verify-email-code.php`. The send endpoint accepts `email`; the verify endpoint accepts `email`, `challenge_id`, and `code`. A successful verification returns a short-lived, single-use `verification_token`, which the application endpoint requires. Codes expire after 10 minutes, verification tokens after 30 minutes, and code entry is limited to five attempts. Sends are limited to one active code per email, one send per email per minute, five per email per hour, and ten per client address per hour. Both verification endpoints accept POST only. Production email delivery requires the SMTP configuration below; local `CAREER_EMAIL_MODE=log` writes the code to the protected `private/email-attempts.jsonl` for development only and sends no email.
+
 | Field | Required | Validation |
 |---|---:|---|
 | `job_id` | Yes | Must match a currently Published job ID |
 | `full_name` | Yes | Up to 120 characters |
 | `email` | Yes | Valid email address, up to 254 characters |
+| `verification_token` | Yes | Single-use token returned after successful email verification |
 | `phone` | Yes | Validated phone characters and 7-15 digits |
 | `resume` | Yes | PDF, no larger than 5 MB |
 | `recruitment_consent` | Yes | Send the string `1` only when checked |
@@ -197,9 +200,9 @@ Open the existing admin at `http://localhost:8080/career%20admin/`. If using a s
 
 Test cases:
 
-1. Use a published ID such as `demo-web-development-intern` from `data/jobs.json` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
+1. Request a code for an email using `api/send-verification-code.php`; in local log mode, read the six-digit code from the protected `private/email-attempts.jsonl`. Verify using `api/verify-email-code.php`, then submit the returned token with a published job ID such as `demo-web-development-intern` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
 2. Submit a made-up ID or an ID for a job changed to `Draft`; expect HTTP `422` and no application record.
-3. Omit name, email, phone, consent, or resume; use an invalid email/phone/year/URL; expect HTTP `422`.
+3. Omit name, email, phone, consent, resume, or verification token; use an invalid email/phone/year/URL; expect HTTP `422`. Check that an invalid or expired code cannot produce a token and that a consumed token cannot submit a second application.
 4. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
 5. After a successful submission, inspect `data/applications.json` locally and confirm the record references only a generated resume name; do not request the JSON through HTTP. Confirm the file is in `private/application-resumes/` (or your configured private directory).
 6. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
