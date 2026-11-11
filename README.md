@@ -36,7 +36,7 @@ Replace the temporary demo credentials before production by rerunning the setup 
 
 ## Run locally
 
-From a VS Code terminal opened in this `career admin` folder, run PHP's built-in server on port `8080` (port `5500` is left available for a separate static-site server). The application endpoint requires PHP's `fileinfo` extension to validate uploaded resume MIME types:
+From a VS Code terminal opened in this `career-admin` folder, run PHP's built-in server on port `8080` (port `5500` is left available for a separate static-site server). The application endpoint requires PHP's `fileinfo` extension to validate uploaded resume MIME types:
 
 ```powershell
 $phpDir = Split-Path (Get-Command php).Source
@@ -47,11 +47,11 @@ php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
 
 Keep this terminal open. Open the admin at:
 
-`http://localhost:8080/career%20admin/`
+`http://localhost:8080/career-admin/`
 
-For the Explore page, start VS Code Live Server from the website folder and open `http://127.0.0.1:5500/career/explore.html`. The Explore page connects to the PHP feed at `http://localhost:8080/career%20admin/public-jobs.php`; the API allows the local `localhost:5500` and `127.0.0.1:5500` origins. The router denies direct requests for private configuration and JSON storage because PHP's built-in server does not read Apache `.htaccess` files. If either server reports that the port is already in use, stop the other server or choose different ports and update the local API URL in the frontend.
+For the Explore page, start VS Code Live Server from the website folder and open `http://127.0.0.1:5500/career/explore.html`. The Explore page connects to the PHP feed at `http://localhost:8080/career-admin/public-jobs.php`; the API allows localhost and 127.0.0.1 origins on any port. The router denies direct requests for private configuration and JSON storage because PHP's built-in server does not read Apache `.htaccess` files. If either server reports that the port is already in use, stop the other server or choose different ports and update the local API URL in the frontend.
 
-The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `/career-admin/public-jobs.php` for production. On `localhost` or `127.0.0.1`, it uses `http://localhost:8080/career%20admin/public-jobs.php` so Explore can reach the PHP server while a static server serves the website on any local port. Local API CORS permits localhost and 127.0.0.1 origins on any port. Remember that `localhost` means the computer running the browser: a page opened on another laptop cannot reach your laptop's `localhost:8080`. For testing across computers, deploy both projects to the same testing domain or configure a reachable API host explicitly. For production, map this folder to `/career-admin/` on the same origin as the website.
+The public Explore page reads its endpoint from the `data-jobs-api` attribute on `.opportunity-grid`, set to `public-jobs.php`. On a local website served from port `80`, it uses `/career-admin/` under the website's current project path; on other localhost/127.0.0.1 ports, it uses `http://localhost:8080/career-admin/`. Local API CORS permits localhost and 127.0.0.1 origins on any port. Remember that `localhost` means the computer running the browser: a page opened on another laptop cannot reach your laptop's `localhost:8080`. For testing across computers, deploy both projects to the same testing domain or configure a reachable API host explicitly. For production, map this folder to `/career-admin/` on the same origin as the website.
 
 ## Job JSON format
 
@@ -100,7 +100,7 @@ Admin create/update form: `index.php`. Public read-only API: `public-jobs.php`, 
 
 The Careers website should submit `multipart/form-data` to:
 
-- Local: `http://localhost:8080/career%20admin/api/submit-application.php`
+- Local: `http://localhost:8080/career-admin/api/submit-application.php`
 - Production (when this folder is deployed at `/career-admin/`): `https://YOUR-DOMAIN/career-admin/api/submit-application.php`
 
 The API accepts `POST` only. It accepts the following fields:
@@ -127,7 +127,7 @@ Before submitting, the applicant must request a six-digit code from `api/send-ve
 Example request from a terminal (replace the resume path with a real PDF):
 
 ```powershell
-curl.exe -i -X POST "http://localhost:8080/career%20admin/api/submit-application.php" `
+curl.exe -i -X POST "http://localhost:8080/career-admin/api/submit-application.php" `
   -F "job_id=demo-web-development-intern" `
   -F "full_name=Test Applicant" `
   -F "email=applicant@example.com" `
@@ -187,7 +187,7 @@ php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
   -S localhost:8080 -t .. .\router.php
 ```
 
-Open the existing admin at `http://localhost:8080/career%20admin/`. If using a separate local static site server, its origin should be `http://localhost:5500` or `http://127.0.0.1:5500`; those two development origins are the only cross-origin origins allowed. The PHP server's router blocks HTTP access to `data/`, `private/`, and `setup.php`, because PHP's built-in server does not read Apache `.htaccess` files.
+Open the existing admin at `http://localhost:8080/career-admin/`. If using a separate local static site server, it may use localhost or 127.0.0.1 on any port; the PHP API allows those local origins. The PHP server's router blocks HTTP access to `data/`, `private/`, and `setup.php`, because PHP's built-in server does not read Apache `.htaccess` files.
 
 Test cases:
 
@@ -196,7 +196,7 @@ Test cases:
 3. Omit name, email, phone, consent, resume, or verification token; use an invalid email/phone/year/URL; expect HTTP `422`. Check that an invalid or expired code cannot produce a token and that a consumed token cannot submit a second application.
 4. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
 5. After a successful submission, inspect `data/applications.json` locally and confirm the record references only a generated resume name; do not request the JSON through HTTP. Confirm the file is in `private/application-resumes/` (or your configured private directory).
-6. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
+6. Request `http://localhost:8080/career-admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
 7. To test mail failure handling, temporarily disable PHP mail delivery in the local test environment and submit an application. The submission should still be persisted and notification status should be `Failed`; restore the mail setup afterward.
 
 On Windows PowerShell, use `curl.exe` (not the `curl` alias) for multipart examples above. For an oversized-file test, upload a local file larger than 5 MB; do not alter production PHP upload limits to bypass the application limit.
