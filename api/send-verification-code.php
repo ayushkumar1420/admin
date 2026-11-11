@@ -66,12 +66,7 @@ try {
         'This code expires in 10 minutes. Enter it on the application form to verify your email address.',
         'If you did not request this code, you can ignore this email.',
     ]);
-    sendCareerEmail($email, 'Verify your email for DeepshiTech Careers', $body, [
-        'type' => 'email-verification',
-        'email_hash' => hash('sha256', strtolower(trim($email))),
-        'development_code' => $code,
-        'code' => $code,
-    ]);
+    sendCareerEmail($email, 'Verify your email for DeepshiTech Careers', $body);
 
     echo json_encode([
         'success' => true,

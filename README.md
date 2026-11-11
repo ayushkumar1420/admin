@@ -40,7 +40,6 @@ From a VS Code terminal opened in this `career admin` folder, run PHP's built-in
 
 ```powershell
 $phpDir = Split-Path (Get-Command php).Source
-$env:CAREER_EMAIL_MODE = "log"
 php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
   -d upload_max_filesize=5M -d post_max_size=6M `
   -S localhost:8080 -t .. .\router.php
@@ -106,7 +105,7 @@ The Careers website should submit `multipart/form-data` to:
 
 The API accepts `POST` only. It accepts the following fields:
 
-Before submitting, the applicant must request a six-digit code from `api/send-verification-code.php` and verify it with `api/verify-email-code.php`. The send endpoint accepts `email`; the verify endpoint accepts `email`, `challenge_id`, and `code`. A successful verification returns a short-lived, single-use `verification_token`, which the application endpoint requires. Codes expire after 10 minutes, verification tokens after 30 minutes, and code entry is limited to five attempts. Sends are limited to one active code per email, one send per email per minute, five per email per hour, and ten per client address per hour. Both verification endpoints accept POST only. Production email delivery requires the SMTP configuration below; local `CAREER_EMAIL_MODE=log` writes the code to the protected `private/email-attempts.jsonl` for development only and sends no email.
+Before submitting, the applicant must request a six-digit code from `api/send-verification-code.php` and verify it with `api/verify-email-code.php`. The send endpoint accepts `email`; the verify endpoint accepts `email`, `challenge_id`, and `code`. A successful verification returns a short-lived, single-use `verification_token`, which the application endpoint requires. Codes expire after 10 minutes, verification tokens after 30 minutes, and code entry is limited to five attempts. Sends are limited to one active code per email, one send per email per minute, five per email per hour, and ten per client address per hour. Both verification endpoints accept POST only. Career emails use the same shared `ds_mail()` helper as the website enquiry forms, which calls PHP `mail()` on the live site. On localhost, the shared helper logs mail to the website's `_private/dev-mail.log` instead of sending it.
 
 | Field | Required | Validation |
 |---|---:|---|
@@ -167,29 +166,21 @@ The response never includes applicant records, private file paths, or mail crede
 
 ## HR email configuration
 
-The recipient is configured server-side through `CAREER_HR_EMAIL` and defaults to `ayushmaurya496@gmail.com`. Email is sent by the built-in SMTP client; `mail()` is not used. Configure these environment variables in the Hostinger PHP application/environment settings (never in website JavaScript or public JSON):
+Career emails reuse the website's shared `_private/lib.php` mail helper and its sender settings in `_private/config.php`, just like the working enquiry form. Deploy Career Admin alongside the website so `../_private/lib.php` is available. The shared helper uses PHP `mail()` on Hostinger; no SMTP credentials or `CAREER_SMTP_*` settings are needed. The HR notification recipient can be set server-side through `CAREER_HR_EMAIL` and defaults to `ayushmaurya496@gmail.com`:
 
 ```text
 CAREER_HR_EMAIL=ayushmaurya496@gmail.com
-CAREER_SMTP_HOST=smtp.your-provider.example
-CAREER_SMTP_PORT=587
-CAREER_SMTP_ENCRYPTION=tls
-CAREER_SMTP_USERNAME=your-mailbox@your-domain.example
-CAREER_SMTP_PASSWORD=your-mailbox-password
-CAREER_SMTP_FROM_EMAIL=your-mailbox@your-domain.example
-CAREER_SMTP_FROM_NAME=DeepshiTech Careers
 ```
 
-Port `587` uses STARTTLS; port `465` can use `CAREER_SMTP_ENCRYPTION=ssl`. Use a mailbox and SMTP host supplied by your mail provider, and make sure the PHP OpenSSL extension is enabled for encrypted SMTP. SMTP delivery is marked `Sent` only after the configured SMTP server accepts the message; this does not guarantee inbox delivery. A failed send leaves the application saved, marks its notification `Failed`, logs only a safe server-side error, and can be retried from the admin detail view.
+Email delivery is marked `Sent` when PHP `mail()` accepts the message; that does not guarantee inbox delivery. A failed send leaves the application saved, marks its notification `Failed`, logs only a safe server-side error, and can be retried from the admin detail view.
 
-For local development only, `CAREER_EMAIL_MODE=log` records a no-delivery attempt in the protected `private/email-attempts.jsonl` and leaves the notification `Pending`. This mode is accepted only when PHP runs via its built-in development server on `localhost` or `127.0.0.1`; production PHP/Hostinger will ignore it and require working SMTP settings. It never reports a logged attempt as an email sent.
+On localhost, the shared helper does not send email unless `local_real_mail` is enabled in the website's `_private/config.php`; it logs messages to `_private/dev-mail.log` and leaves application notifications `Pending`. The verification code is included in the newest logged message for local testing.
 
 ## Local application testing
 
 Use PHP 8.0+ with sessions and the `fileinfo` extension enabled. The application endpoint fails closed when MIME inspection is unavailable. Keep the existing PHP built-in server/router arrangement; from this project directory run:
 
 ```powershell
-$env:CAREER_EMAIL_MODE = "log"
 $phpDir = Split-Path (Get-Command php).Source
 php -d "extension_dir=$phpDir\ext" -d extension=php_fileinfo.dll `
   -d upload_max_filesize=5M -d post_max_size=6M `
@@ -200,16 +191,16 @@ Open the existing admin at `http://localhost:8080/career%20admin/`. If using a s
 
 Test cases:
 
-1. Request a code for an email using `api/send-verification-code.php`; in local log mode, read the six-digit code from the protected `private/email-attempts.jsonl`. Verify using `api/verify-email-code.php`, then submit the returned token with a published job ID such as `demo-web-development-intern` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` when local log mode is enabled.
+1. Request a code for an email using `api/send-verification-code.php`; on localhost, read the six-digit code from the newest message in the website's `_private/dev-mail.log`. Verify using `api/verify-email-code.php`, then submit the returned token with a published job ID such as `demo-web-development-intern` and a real PDF; expect HTTP `201`, an application record, a private resume, and notification status `Pending` locally.
 2. Submit a made-up ID or an ID for a job changed to `Draft`; expect HTTP `422` and no application record.
 3. Omit name, email, phone, consent, resume, or verification token; use an invalid email/phone/year/URL; expect HTTP `422`. Check that an invalid or expired code cannot produce a token and that a consumed token cannot submit a second application.
 4. Upload a non-PDF renamed to `.pdf`, a malformed PDF without a `%PDF-` signature/`%%EOF`, or a PDF larger than 5 MB; expect rejection. PHP must allow requests up to at least 6 MB (`post_max_size`) and files up to 5 MB (`upload_max_filesize`) for the app's own size checks to run.
 5. After a successful submission, inspect `data/applications.json` locally and confirm the record references only a generated resume name; do not request the JSON through HTTP. Confirm the file is in `private/application-resumes/` (or your configured private directory).
 6. Request `http://localhost:8080/career%20admin/admin-resume.php?id=APP-...` without logging in; expect HTTP `401`. Log in to the admin, open the application, and use its resume link to test the authorized download.
-7. Stop the built-in server with `Ctrl+C`, run `Remove-Item Env:CAREER_EMAIL_MODE` in that terminal, and restart the server to exercise failure handling with SMTP unset. The submission should still be persisted, and notification status should be `Failed`; retrying from admin should remain visibly failed until SMTP is configured.
+7. To test mail failure handling, temporarily disable PHP mail delivery in the local test environment and submit an application. The submission should still be persisted and notification status should be `Failed`; restore the mail setup afterward.
 
 On Windows PowerShell, use `curl.exe` (not the `curl` alias) for multipart examples above. For an oversized-file test, upload a local file larger than 5 MB; do not alter production PHP upload limits to bypass the application limit.
 
 ## Hostinger deployment notes
 
-Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can call the production endpoint above. Confirm the hosting account uses PHP 8+, Apache `.htaccess` rules are enabled, and `data/.htaccess` and `private/.htaccess` return access denied for direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Configure SMTP environment values in the server-side PHP environment, require HTTPS, and verify one real notification before launch. The PHP built-in local-development email mode must not be deployed as a production mail service.
+Deploy this project at `/career-admin/` on the same origin as the Careers frontend so the frontend can call the production endpoint above. The website's shared `_private/lib.php` and `_private/config.php` must remain available at the website root; Career Admin uses that same PHP `mail()` helper as the enquiry form. Confirm the hosting account uses PHP 8+, Apache `.htaccess` rules are enabled, and `data/.htaccess` and `private/.htaccess` return access denied for direct requests. Set writable permissions narrowly for `data/`, `private/`, and the private resume directory; do not make those directories publicly readable. Prefer a `CAREER_PRIVATE_STORAGE_DIR` outside `public_html`. Require HTTPS and verify a real verification email and HR notification before launch.
