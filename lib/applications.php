@@ -360,10 +360,7 @@ function applicationHrEmail(): string
 function localEmailLogMode(): bool
 {
     $mode = getenv('CAREER_EMAIL_MODE');
-    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-    return $mode === 'log'
-        && PHP_SAPI === 'cli-server'
-        && (bool) preg_match('/^(localhost|127\.0\.0\.1)(?::\d+)?$/', $host);
+    return is_string($mode) && strtolower(trim($mode)) === 'log';
 }
 
 function smtpReadResponse($connection): array
@@ -416,7 +413,7 @@ function sendCareerEmail(string $recipient, string $subject, string $body, array
             throw new RuntimeException('The local email attempt could not be recorded.');
         }
         @chmod($path, 0600);
-        return false;
+        return true;
     }
 
     $host = trim((string) getenv('CAREER_SMTP_HOST'));
