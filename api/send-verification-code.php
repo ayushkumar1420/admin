@@ -61,12 +61,23 @@ try {
     $challengeId = bin2hex(random_bytes(24));
     storeEmailVerificationChallenge($challengeId, $email, $code);
     $body = implode("\r\n", [
-        'Your DeepshiTech Careers verification code is: ' . $code,
+        'Dear User,',
         '',
-        'This code expires in 10 minutes. Enter it on the application form to verify your email address.',
-        'If you did not request this code, you can ignore this email.',
+        'Your One-Time Password (OTP) for verification is:',
+        '',
+        $code,
+        '',
+        'This code is valid for 5 minutes. Please do not share it with anyone for security reasons.',
+        '',
+        'If you did not initiate this verification request, you may safely ignore this email. No further action is required.',
+        '',
+        'Thank you for choosing DeepshiTech Private Limited.',
+        '',
+        'Regards,',
+        'Team DeepshiTech',
+        'https://deepshitech.com',
     ]);
-    sendCareerEmail($email, 'Verify your email for DeepshiTech Careers', $body);
+    sendCareerEmail($email, 'Your DeepshiTech verification OTP', $body);
 
     echo json_encode([
         'success' => true,

@@ -170,7 +170,7 @@ function storeEmailVerificationChallenge(string $challengeId, string $email, str
             'email_hash' => hash('sha256', strtolower(trim($email))),
             'code_hash' => password_hash($code, PASSWORD_DEFAULT),
             'attempts' => 0,
-            'expires_at' => time() + 600,
+            'expires_at' => time() + 300,
             'verification_token_hash' => '',
         ];
     });

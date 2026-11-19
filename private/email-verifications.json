@@ -1,11 +1,11 @@
 {
     "challenges": [
         {
-            "challenge_id": "53d8b507f2e5ca61e5ab4aa8e67c199b5623ad5095deeba6",
+            "challenge_id": "fb61b20575b118da8cf5a2ca0440385b0c5dc041cf8da033",
             "email_hash": "8d92ea19cae9bf9d0256395dfa8cd81374fe605da38bf82bdf009ccee7eeaad5",
-            "code_hash": "$2y$10$syyyp7wBHRZftWur2XksA.j2ShmJ6YVXAN5JIQnZjkBeXKbSxPhaW",
+            "code_hash": "$2y$10$tXBQ1ipcul9vBl1atE7q8.vJx5/wrpLZhvcgKE0PWhNyOpOoxItg.",
             "attempts": 0,
-            "expires_at": 1794377473,
+            "expires_at": 1794995190,
             "verification_token_hash": ""
         }
     ],
@@ -13,12 +13,7 @@
         {
             "email_hash": "8d92ea19cae9bf9d0256395dfa8cd81374fe605da38bf82bdf009ccee7eeaad5",
             "client_hash": "eff8e7ca506627fe15dda5e0e512fcaad70b6d520f37cc76597fdb4f2d83a1a3",
-            "created_at": 1794376081
-        },
-        {
-            "email_hash": "8d92ea19cae9bf9d0256395dfa8cd81374fe605da38bf82bdf009ccee7eeaad5",
-            "client_hash": "eff8e7ca506627fe15dda5e0e512fcaad70b6d520f37cc76597fdb4f2d83a1a3",
-            "created_at": 1794376873
+            "created_at": 1794994890
         }
     ]
 }
